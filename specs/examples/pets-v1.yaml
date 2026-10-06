@@ -1,0 +1,174 @@
+# pets-v1 — reference DatasetSpec for a public pet-photo corpus (cull-audit consumer).
+#
+# This is the realistic declarative reference spec for the compiler. It is compiled in E6
+# (rmax-ai/dataset-compiler milestone M6) from the frozen pet SourceSnapshot produced by
+# rmax-ai/dataset-sources E7 (upstream: Wikimedia/Hugging Face/anonymous no-auth sources; ADR-0013).
+# The snapshot URI/digest marked PLACEHOLDER is bound at intake (E6.1). Everything else is the
+# intended production shape.
+#
+# Boundaries: no private photos; no provider acquisition in this repo (snapshot consumption only);
+# redistribution requires per-asset license evidence (CC0/PD/CC BY/CC BY-SA only); source bytes
+# stay upstream (Git stores specs/manifests/evidence).
+
+spec_version: "1"
+spec_id: pets-v1
+rules_version: "1"
+metadata:
+  name: "Pet reference corpus v1"
+  purpose: >-
+    Photo-culling evaluation corpus for rmax-ai/cull-audit: coherent pet mini-shoots with
+    explicit quality, coverage, and diversity constraints.
+  maintainers: ["rmax-ai"]
+  created: "2026-10-03"
+  tags: [pets, cull-audit, reference, public]
+  notes: >-
+    Preferred target: 8-12 coherent mini-shoots of roughly 9 images each (~72-90 items), built
+    from an oversampled pool of at least two public collections. Selection optimizes the declared
+    culling/group/diversity requirements; it must never be tuned for downstream model outcomes.
+    Group admission follows the source-snapshots group-admission rule: no invented groups; a
+    shortfall is reported as an incomplete build.
+
+sources:
+  # Canonical input: frozen SourceSnapshot from dataset-sources (ADR-0013). The snapshot aggregates
+  # the oversampled pet pool (Commons + Hugging Face collections upstream); this compiler consumes
+  # it and provisions nothing.
+  - source_id: pets_snapshot
+    snapshot:
+      uri: "PLACEHOLDER"              # frozen at E6.1: s3:// or https:// manifest location from dataset-sources E7
+      digest: "sha256:PLACEHOLDER"    # content digest of the snapshot manifest (source identity)
+      frozen: true
+    reader: auto                      # thin reader by URI scheme: file|http|s3
+    params: {}                        # reader-level options only
+    license_policy:
+      allow: [CC0, PD, CC_BY, CC_BY_SA] # redistribution allowlist; evidence REQUIRED per asset
+      require_evidence: true
+
+  # Offline/mock path: tests and CI replace the remote snapshot via --source-override with a local
+  # fixture snapshot; see tests/fixtures/ and docs/source-snapshots.md §3.1.
+  # - source_id: local_fixture
+  #   snapshot: {uri: "file:tests/fixtures/pool-snapshot/", digest: "sha256:<fixture-digest>", frozen: true}
+  #   reader: file
+  #   license_policy: {allow: [CC0, PD], require_evidence: true}
+
+selection:
+  unit: group
+  group:
+    group_by: [source_id, series_key]     # series_key = ADMITTED series/session evidence only
+    min_items_per_group: 6
+    max_items_per_group: 12
+    min_groups_selected: 8
+    max_groups_selected: 12
+    item_order: capture_order              # used for stable ordering within a group when known
+  targets:
+    items: 90
+    oversample_factor: 20                  # enumerate ~20x target before reductions
+
+admissibility:
+  hard:
+    - id: licensed_for_redistribution
+      scope: item
+      rule: license_in {allow}
+    - id: min_dimensions
+      scope: item
+      rule: width >= 1200 and height >= 800
+    - id: sane_aspect
+      scope: item
+      rule: 0.5 <= (width/height) <= 2.2
+    - id: exact_duplicate
+      scope: portfolio                     # selected-set check (single pHash floor lives in portfolio.diversity)
+      rule: content_sha256 not_in selected.content_hashes
+  semantic:
+    - id: primary_subject_is_pet
+      scope: item
+      rule: observation.subject.primary in {cat, dog}
+    - id: plausibly_single_subject
+      scope: item
+      rule: 1 <= observation.subject.count <= 3
+    - id: not_artwork
+      scope: item
+      rule: observation.medium == photograph and observation.artwork_score < 0.5
+    - id: acceptable_visibility
+      scope: item
+      rule: observation.occlusion.severity <= moderate
+            and observation.defects[motion_blur].severity <= mild
+    - id: no_watermark
+      scope: item
+      rule: observation.defects[watermark].severity <= mild
+
+objectives:
+  - id: quality
+    kind: weighted_sum
+    weights:
+      observation.quality.overall: 0.5
+      observation.quality.sharpness: 0.2
+      observation.composition.subjective: 0.3
+    missing_term_policy: renormalize
+    default: 0.0
+  - id: utility
+    kind: weighted_sum
+    weights:
+      quality: 0.7                         # nested objective reference (DAG)
+      metadata.novelty: 0.3               # derived: reciprocal class frequency in the frozen pool
+    missing_term_policy: renormalize
+    default: 0.0
+
+portfolio:
+  quotas:
+    species:
+      cat: {min: 0.4, max: 0.6}
+      dog: {min: 0.4, max: 0.6}
+    environment:
+      indoor: {min: 0.25, max: 0.5}
+      outdoor: {min: 0.25, max: 0.5}
+      studio: {min: 0.0, max: 0.15}
+  coverage:
+    - id: breeds
+      field: observation.subject.breed_group
+      min_distinct: 8
+    - id: settings
+      field: observation.environment.setting
+      min_distinct: 3
+  diversity:
+    phash_min_distance: 8                  # single effective pHash floor
+    embedding:
+      enabled: true
+      min_cosine_distance: 0.15
+      weight: 0.25
+
+verification:
+  level: digest                            # bytes-level when frozen bytes exist
+  verify_checksums: true
+  recheck_license_evidence: against_snapshot
+  sample_reinspection:
+    enabled: true
+    sample_size: 8
+    method: seeded_random
+  fail_closed_on_ambiguity: true
+
+provenance:
+  retain:
+    - source_uri
+    - source_revision
+    - license_evidence
+    - technical_observations
+    - semantic_receipts
+    - predicate_results
+    - selection_decisions
+  record_evaluator_identity: true
+  allow_evidence_reuse: true
+
+output:
+  build_manifest: manifests/pets-v1.build.json
+  materialization:
+    adapter: local                          # v0.1: local destinations only
+    target: "file:///data/datasets/pets-v1" # local destination only; no infrastructure owned
+    max_edge: 1536
+    format: jpeg
+    quality: 85
+    max_total_bytes: 45000000
+
+budgets:
+  max_semantic_calls: 1200
+  usd_estimate_cap: 5.00                    # initial reference-build cap (raise only via an explicit queue issue)
+  price_table: reference.v1                 # pinned per-call price table used for preflight accounting
+  worst_case_reserve_per_call: 0.01         # USD reservation per call; halt BEFORE a breach; resumable budget_halt.json

@@ -1,0 +1,543 @@
+# Frozen planning corpus for rmax-ai/dataset-compiler (created from PLAN.md §7 at bootstrap).
+# The builder (create_issues.py) turns this into the native GitHub issue graph:
+# parent epic -> E1-E6 epics -> tasks/subtasks, with dependency links resolved to live issue
+# numbers and epic checklists patched in a second pass.
+#
+# Rule carried on every generated issue: planning state only — execution requires a central
+# rmax-ai/delegation-queue trigger.
+version: 1
+project: rmax-ai/dataset-compiler
+
+milestones:
+  M1-spec: "M1 — DatasetSpec v1: validator, plan, stable diagnostics (offline)."
+  M2-catalog: "M2 — Source snapshots: frozen consumption, reproducible catalogs; no-credential path."
+  M3-evidence: "M3 — Semantic evidence plane: offline replay, fail-closed, receipts."
+  M4-selection: "M4 — Portfolio selection: deterministic greedy, diversity/coverage, groups."
+  M5-manifest: "M5 — BuildManifest: verify/explain/materialize, offline replay."
+  M6-reference: "M6 — Public pet reference build handed to cull-audit + evaluation report."
+
+issues:
+  - key: project
+    type: epic
+    title: "Project: declarative Dataset Compiler (parent epic)"
+    milestone: M1-spec
+    deps: []
+    scope: |
+      Parent epic for the whole project. Compiler: DatasetSpec + frozen SourceSnapshot -> candidate
+      catalog -> observations/predicates -> portfolio selection -> frozen BuildManifest;
+      materialization optional. Boundaries in PLAN.md §2 (no storage ownership; no provider
+      acquisition (ADR-0013); no second Jev adapter; Git carries specs/manifests/evidence only).
+    deliverables:
+      - "E1-E6 child epics complete with linked tasks and deterministic acceptance"
+      - "Reference pet build handed to rmax-ai/cull-audit with traceable licenses"
+    acceptance:
+      - "All child epics closed with their acceptance evidence recorded"
+      - "Reference build frozen; cull-audit consumes it via exactly one canonical path"
+
+  - key: E1
+    type: epic
+    title: "E1 — DatasetSpec v1 + compile plan"
+    milestone: M1-spec
+    deps: []
+    scope: |
+      Pydantic v2 models + explicit schema/version envelope; generated JSON Schema; DatasetSpec
+      YAML/JSON loading; hard vs semantic predicates vs soft objectives vs portfolio constraints;
+      asset/group selection units; CLI `spec lint` and `plan`; deterministic offline fixtures.
+    deliverables:
+      - "src/dataset_compiler/models/spec.py (Pydantic v2) + schema export"
+      - "definitions for predicates/objectives/portfolio constraints + selection units"
+      - "`dataset-compiler spec lint SPEC` and `plan SPEC` (offline)"
+      - "spec fixture corpus incl. specs/examples/pets-v1.yaml"
+    acceptance:
+      - "malformed/extra/ambiguous specs fail with stable diagnostics ({code, path, message})"
+      - "pets-v1 validates clean"
+      - "`plan` resolves intended evaluators/stages/counts without any paid inference"
+      - "JSON Schema committed and round-trip tests green"
+
+  - key: E1.1
+    type: task
+    title: "E1.1 — DatasetSpec v1 models + version envelope + JSON Schema export"
+    milestone: M1-spec
+    deps: []
+    deliverables:
+      - "models/spec.py: envelope, sources, selection, admissibility, objectives, portfolio, verification, provenance, output, budgets"
+      - "extra-field policy: forbid outside versioned extensions blocks"
+      - "schema export command + committed JSON Schema"
+    acceptance:
+      - "round-trip serialization tests green"
+      - "unknown keys outside extensions rejected with SPEC_UNKNOWN_FIELD"
+      - "generated schema is deterministic (stable output for identical input)"
+
+  - key: E1.2
+    type: task
+    title: "E1.2 — Spec loading + stable diagnostics"
+    milestone: M1-spec
+    deps: [E1.1]
+    deliverables:
+      - "YAML/JSON loaders with precise error paths"
+      - "diagnostic codes table implemented (docs/specification.md §12)"
+    acceptance:
+      - "every invalid fixture asserts its exact code + path"
+      - "valid example loads without warnings"
+
+  - key: E1.3
+    type: task
+    title: "E1.3 — Predicate/objective taxonomy + plan resolver"
+    milestone: M1-spec
+    deps: [E1.1, E1.2]
+    deliverables:
+      - "expression layer for hard/semantic predicates + objectives (compile-time field validation)"
+      - "plan resolver: stages, evaluators, expected work, cache-hit map, blockers"
+    acceptance:
+      - "rules referencing unknown observation fields fail at compile time (SPEC_RULE_UNCOMPILABLE)"
+      - "plan output on pets-v1 lists stages + expected counts; zero network calls (asserted)"
+
+  - key: E1.4
+    type: task
+    title: "E1.4 — Offline spec fixture corpus (valid + invalid)"
+    milestone: M1-spec
+    deps: [E1.1]
+    deliverables:
+      - "tests/fixtures/specs/: valid/*.yaml + invalid/*.yaml (one per diagnostic code)"
+      - "pets-v1 wired into fixture corpus"
+    acceptance:
+      - "each invalid fixture pins one documented code"
+      - "fixture corpus runs in CI offline"
+
+  - key: E1.5
+    type: task
+    title: "E1.5 — CLI lint/plan wiring with deterministic exit codes"
+    milestone: M1-spec
+    deps: [E1.2, E1.3]
+    deliverables:
+      - "cli: spec lint, plan; exit codes documented + stable"
+    acceptance:
+      - "exit codes asserted in tests (0 valid / 2 invalid / 3 blocked)"
+      - "no network in lint/plan paths (asserted)"
+
+  - key: E2
+    type: epic
+    title: "E2 — Snapshot consumption + immutable identity"
+    milestone: M2-catalog
+    deps: [E1]
+    scope: |
+      SourceSnapshot consumption (rmax-ai/dataset-sources, ADR-0013): snapshot manifests; thin
+      readers (file/http; optional s3); snapshot/catalog digest verification (fail-closed);
+      normalized CandidateAsset/CandidateGroup; catalog freeze + digest; content hash/pHash +
+      technical inspection; license/provenance pass-through. No provider acquisition here.
+      Cross-repo: snapshot manifest shape co-defined with rmax-ai/dataset-sources; link its E1/E2
+      triggers once filed.
+    deliverables:
+      - "sources/ snapshot readers + contract"
+      - "catalog freeze + digest implementation"
+      - "technical inspection pass (hashes, MIME, dims, pHash)"
+    acceptance:
+      - "frozen snapshot replay -> byte-identical catalog manifest (digest equal); draft snapshots are exploration-only"
+      - "snapshot digest change changes the catalog digest by construction"
+      - "no provider credential required for the public reference path"
+      - "no provider acquisition code paths (grep-level boundary test)"
+
+  - key: E2.1
+    type: task
+    title: "E2.1 — SnapshotReader contract + CandidateAsset/CandidateGroup normalization"
+    milestone: M2-catalog
+    deps: [E1.1]
+    deliverables:
+      - "sources/base.py protocol; models for candidate rows (identity+provenance fields per docs/source-snapshots.md §1)"
+      - "deterministic ordering rules"
+    acceptance:
+      - "contract tests with an inline fixture snapshot"
+      - "catalog serialization byte-stable across runs"
+
+  - key: E2.2
+    type: task
+    title: "E2.2 — file + http snapshot readers (fixtures, pinned URL)"
+    milestone: M2-catalog
+    deps: [E2.1]
+    deliverables:
+      - "sources/file.py (local snapshot dir/manifest); sources/http.py (pinned manifest URL)"
+    acceptance:
+      - "same frozen snapshot -> byte-identical catalog"
+      - "http reader consumes a frozen fixture URL offline (file:// path) in tests"
+
+  - key: E2.3
+    type: task
+    title: "E2.3 — Snapshot + catalog digest verification (fail-closed)"
+    milestone: M2-catalog
+    deps: [E2.1]
+    deliverables:
+      - "sources/verify.py: manifest digest check; snapshot schema-version check; frozen-required-for-build check; catalog digest recomputation"
+    acceptance:
+      - "digest mismatch fails closed with a stable code (no partial catalog)"
+      - "draft (non-frozen) snapshot rejected for builds; allowed for exploration with warning"
+
+  - key: E2.4
+    type: task
+    title: "E2.4 — Thin object reader (streaming/range; file/http/s3)"
+    milestone: M2-catalog
+    deps: [E2.1]
+    deliverables:
+      - "sources/objects.py: streaming/range reads for referenced object URIs; bounded concurrency"
+    acceptance:
+      - "range reads verified against snapshot-recorded checksums"
+      - "bounded memory on a synthetic large-object iterator; no full-dataset staging"
+
+  - key: E2.5
+    type: task
+    title: "E2.5 — Catalog freeze + digest; technical inspection pass"
+    milestone: M2-catalog
+    deps: [E2.2, E2.3]
+    deliverables:
+      - "inspection/: sha256 verify vs snapshot, MIME, dimensions, pHash; freeze serialization + digest"
+    acceptance:
+      - "freeze digest stable across runs; changes on snapshot change"
+      - "pHash deterministic for fixture bytes (pinned implementation)"
+
+  - key: E2.5a
+    type: subtask
+    title: "E2.5a — pHash implementation pinning + determinism tests"
+    milestone: M2-catalog
+    deps: [E2.5]
+    deliverables:
+      - "pinned pHash implementation + version recorded in receipts"
+    acceptance:
+      - "known-vector tests (fixed bytes -> fixed pHash)"
+      - "version participates in evidence identity (receipt test)"
+
+  - key: E2.6
+    type: task
+    title: "E2.6 — Snapshot consumption contract suite + no-credential reference path"
+    milestone: M2-catalog
+    deps: [E2.2, E2.3, E2.4, E2.5]
+    deliverables:
+      - "suite over all readers with frozen fixture snapshots; documented no-credential path"
+    acceptance:
+      - "suite green offline (network readers via recorded fixtures)"
+      - "documented steps require no credentials; reference path consumes the pet snapshot when available"
+
+  - key: E3
+    type: epic
+    title: "E3 — Semantic evidence + predicate plane"
+    milestone: M3-evidence
+    deps: [E1, E2]
+    scope: |
+      Provider-neutral SemanticObserver contract; offline/mock observer; one bounded reference VLM
+      adapter only after offline contracts pass; typed SemanticObservation; evaluator/model/prompt/
+      schema identity; cache/receipt semantics; deterministic predicate engine; provider-neutral
+      external predicate contract compatible with the existing rmax-ai/jev-tool boundary (no second
+      Jev adapter; ADR-0003).
+    deliverables:
+      - "semantics/ observer contract + mock; predicates/ engine + external contract"
+      - "receipts/cache implementation"
+    acceptance:
+      - "frozen semantic receipts replay offline"
+      - "changing only DatasetSpec quotas/weights does not invoke the semantic observer"
+      - "malformed model output fails closed into explicit evidence error/abstention"
+
+  - key: E3.1
+    type: task
+    title: "E3.1 — SemanticObserver contract + typed observations + identity"
+    milestone: M3-evidence
+    deps: [E1.1]
+    deliverables:
+      - "semantics/base.py; image.v1 observation schema (docs/semantic-evidence.md §2)"
+    acceptance:
+      - "schema-validated outputs; identity fields mandatory in receipts"
+      - "observer input/output round-trip fixtures green"
+
+  - key: E3.2
+    type: task
+    title: "E3.2 — Offline/mock observer + receipt/cache semantics"
+    milestone: M3-evidence
+    deps: [E3.1]
+    deliverables:
+      - "semantics/mock.py; cache store keyed per docs/provenance.md §2"
+    acceptance:
+      - "mock receipts replay offline; cache key excludes volatile fields (test)"
+      - "quota-only spec edit -> observer call count stays zero (integration test)"
+
+  - key: E3.3
+    type: task
+    title: "E3.3 — Deterministic predicate engine"
+    milestone: M3-evidence
+    deps: [E1.3, E3.1]
+    deliverables:
+      - "predicates/deterministic.py: atomic rules over catalog/technical/observation fields"
+    acceptance:
+      - "deterministic outcomes + stable reason codes"
+      - "unknown fields fail at compile time, never silent-skip"
+
+  - key: E3.4
+    type: task
+    title: "E3.4 — External predicate contract (provider-neutral; jev-tool boundary)"
+    milestone: M3-evidence
+    deps: [E3.1]
+    deliverables:
+      - "predicates/external.py protocol + fixture provider; docs on rmax-side reuse via rmax-ai/jev-tool"
+    acceptance:
+      - "offline fixture provider passes contract tests"
+      - "repository contains no Jev client / no second adapter (boundary test)"
+
+  - key: E3.5
+    type: task
+    title: "E3.5 — Bounded reference VLM observer adapter (spend-gated)"
+    milestone: M3-evidence
+    deps: [E3.2, E3.3]
+    deliverables:
+      - "semantics/vlm.py: one bounded adapter emitting typed observations + receipts"
+    acceptance:
+      - "only dispatched after offline battery green (gate recorded)"
+      - "malformed output -> explicit error/abstention; no defaults"
+      - "spend accounting hooks present; budget ceiling enforced"
+
+  - key: E3.6
+    type: task
+    title: "E3.6 — Replay + fail-closed policy tests"
+    milestone: M3-evidence
+    deps: [E3.2]
+    deliverables:
+      - "tests for replay, incompatibility, abstention paths"
+    acceptance:
+      - "EVIDENCE_INCOMPATIBLE path covered; abstention never imputed as quality"
+      - "replay determinism: same receipts -> identical predicate outcomes"
+
+  - key: E4
+    type: epic
+    title: "E4 — Selection, diversity and grouped compilation"
+    milestone: M4-selection
+    deps: [E1]
+    scope: |
+      Hard constraints; weighted objectives; distribution quotas; coverage constraints; pHash/
+      embedding diversity; grouped selection; deterministic greedy v0.1 selector; reason codes for
+      every selected/rejected candidate.
+    deliverables:
+      - "selection/ greedy selector + feasibility + reason codes"
+      - "diversity features"
+    acceptance:
+      - "deterministic output from frozen catalog/evidence/spec"
+      - "tests show naive top-score collapse corrected by explicit diversity/coverage constraints"
+      - "group selection can express mini-shoot/burst requirements"
+
+  - key: E4.1
+    type: task
+    title: "E4.1 — Constraint/objective/portfolio models + feasibility validation"
+    milestone: M4-selection
+    deps: [E1.3]
+    deliverables:
+      - "portfolio data structures; feasibility checker with named constraints"
+    acceptance:
+      - "infeasible specs fail before selection with SPEC_INFEASIBLE_TARGETS + diagnosis"
+      - "quota/coverage/diversity/group constraints all modeled"
+
+  - key: E4.2
+    type: task
+    title: "E4.2 — Deterministic greedy selector v0.1 + reason codes"
+    milestone: M4-selection
+    deps: [E4.1]
+    deliverables:
+      - "selection/greedy.py behind replaceable Selector interface"
+    acceptance:
+      - "byte-stable selection from frozen inputs"
+      - "closed reason-code taxonomy; every decision has primary_reason"
+
+  - key: E4.3
+    type: task
+    title: "E4.3 — Diversity features (pHash + optional embedding)"
+    milestone: M4-selection
+    deps: [E4.1]
+    deliverables:
+      - "features/: pairwise distance + diversity_gain; embedding interface (optional)"
+    acceptance:
+      - "diversity floor enforcement demonstrably changes selected set (fixture)"
+      - "embedding path skippable without selection failure (declared degradation)"
+
+  - key: E4.4
+    type: task
+    title: "E4.4 — Grouped selection semantics"
+    milestone: M4-selection
+    deps: [E4.1]
+    deliverables:
+      - "group selection: group-level utility/constraints, membership selection, min/max items"
+    acceptance:
+      - "mini-shoot fixture: 9-image groups expressible via spec alone"
+      - "group count/distribution constraints enforced"
+
+  - key: E4.5
+    type: task
+    title: "E4.5 — Collapse-correction + determinism test suite"
+    milestone: M4-selection
+    deps: [E4.2, E4.3, E4.4]
+    deliverables:
+      - "constructed fixture: high-utility near-duplicate cluster + diverse candidates"
+    acceptance:
+      - "random vs top-score vs constrained outcomes match docs/selection.md §5 table"
+      - "repeat runs byte-identical"
+
+  - key: E5
+    type: epic
+    title: "E5 — Build manifest, verify, explain and materialize"
+    milestone: M5-manifest
+    deps: [E1, E2, E3, E4]
+    scope: |
+      Versioned BuildManifest; complete provenance graph; CLI build/verify/explain/materialize;
+      local materializer; optional generic fsspec/object-store materializer if bounded and clean;
+      checksum verification and replay; no hidden network in verify.
+    deliverables:
+      - "models/build.py; CLI build/verify/explain/materialize; materialize/local.py"
+    acceptance:
+      - "BuildManifest alone explains each inclusion/rejection"
+      - "verify works offline over frozen evidence/available bytes"
+      - "materialization is replaceable and does not alter selection semantics"
+
+  - key: E5.1
+    type: task
+    title: "E5.1 — Versioned BuildManifest + provenance graph"
+    milestone: M5-manifest
+    deps: [E4.2]
+    deliverables:
+      - "models/build.py per docs/provenance.md §4; digest rules"
+    acceptance:
+      - "manifest validates against schema; every selected asset carries decision + evidence refs"
+      - "build_id stable across rebuilds from frozen inputs"
+
+  - key: E5.2
+    type: task
+    title: "E5.2 — CLI build + verify (offline checksum/replay)"
+    milestone: M5-manifest
+    deps: [E5.1, E3.6]
+    deliverables:
+      - "cli build/verify; UNVERIFIABLE_MISSING_EVIDENCE vs MISMATCH distinction"
+    acceptance:
+      - "verify passes offline; no sockets opened (asserted)"
+      - "tampered fixture bytes -> MISMATCH"
+
+  - key: E5.2a
+    type: subtask
+    title: "E5.2a — No-network assertion harness for verify/plan paths"
+    milestone: M5-manifest
+    deps: [E5.2]
+    deliverables:
+      - "socket-blocking test harness used by verify/plan tests"
+    acceptance:
+      - "any hidden network attempt fails the harness (self-test proves it triggers)"
+
+  - key: E5.3
+    type: task
+    title: "E5.3 — CLI explain (per-asset reason path)"
+    milestone: M5-manifest
+    deps: [E5.1]
+    deliverables:
+      - "explain renders full why-path from manifest alone"
+    acceptance:
+      - "selected + rejected examples render deterministically"
+      - "no external reads beyond the manifest (and optional evidence files)"
+
+  - key: E5.4
+    type: task
+    title: "E5.4 — Local materializer (replaceable, checksummed)"
+    milestone: M5-manifest
+    deps: [E5.1]
+    deliverables:
+      - "materialize/local.py with size/format bounds from output policy"
+    acceptance:
+      - "materialized set checksums recorded in manifest; selection unchanged"
+      - "manifest-only build remains a complete valid output"
+
+  - key: E5.5
+    type: task
+    title: "E5.5 — Optional fsspec/object-store materializer (bounded)"
+    milestone: M5-manifest
+    deps: [E5.4]
+    deliverables:
+      - "materialize/fsspec.py ONLY if implementation stays clean/bounded"
+    acceptance:
+      - "no provisioning logic; destination-only; documented as optional"
+      - "skippable: absence does not affect other acceptance"
+
+  - key: E5.6
+    type: task
+    title: "E5.6 — End-to-end offline fixture build + replay"
+    milestone: M5-manifest
+    deps: [E5.2, E5.2a, E5.3, E5.4]
+    deliverables:
+      - "fixture pipeline: spec -> catalog -> mock observe -> select -> build -> verify -> explain -> materialize"
+    acceptance:
+      - "full loop deterministic (byte-identical artifacts across runs)"
+      - "runs offline in CI"
+
+  - key: E6
+    type: epic
+    title: "E6 — Public pet reference build + cull-audit integration"
+    milestone: M6-reference
+    deps: [E2, E3, E4, E5]
+    scope: |
+      Finalize specs/examples/pets-v1.yaml; consume the frozen pet SourceSnapshot produced by
+      rmax-ai/dataset-sources E7 (upstream Wikimedia/Hugging Face/anonymous no-auth sources;
+      ADR-0013); oversampled pool carried by the snapshot; compile a purpose-specific pet
+      corpus with quality/coverage/diversity constraints; coherent group/mini-shoot requirements
+      where supported; freeze provenance/evidence/manifests; compare random vs quality-only vs
+      constrained compilation on dataset-level metrics; hand the frozen build to cull-audit;
+      reconcile delegation-queue#136.
+    deliverables:
+      - "frozen BuildManifest + evidence pack; evaluation report; cull-audit handoff"
+    acceptance:
+      - "no private photos; every redistributed/materialized asset has traceable license evidence"
+      - "source bytes not in dataset-compiler Git"
+      - "end-to-end run measures full snapshot bytes vs peak local dataset-cache bytes; cache budget is smaller than the source snapshot (recorded in evidence)"
+      - "cull-audit has exactly one canonical public-demo provenance path"
+      - "report explains what the declarative compiler changed vs simple sampling"
+
+  - key: E6.1
+    type: task
+    title: "E6.1 — Snapshot intake: frozen pet SourceSnapshot + oversampled candidate pool"
+    milestone: M6-reference
+    deps: [E2.6]
+    deliverables:
+      - "consumed frozen pet snapshot (digest-pinned; dataset-sources E7) + pool manifest + pool digest"
+    acceptance:
+      - "snapshot digest verified; pool much larger than target; ≥2 upstream public collections where practical"
+      - "per-asset license evidence present or asset excluded from redistribution"
+
+  - key: E6.2
+    type: task
+    title: "E6.2 — Compile reference build (constraints + groups)"
+    milestone: M6-reference
+    deps: [E6.1, E3.3, E4.2, E4.4, E5.2]
+    deliverables:
+      - "frozen BuildManifest for pets-v1 (group semantics honored where supported)"
+    acceptance:
+      - "manifest verifies offline; ALL declared constraints satisfied — a partial/shortfall build is marked `incomplete` and is NOT a successful handoff"
+      - "spend within budget ceiling (initial USD 5)"
+      - "cache-budget measurement recorded: peak local dataset-cache bytes < full snapshot bytes"
+
+  - key: E6.3
+    type: task
+    title: "E6.3 — Dataset-level evaluation report (random vs top-score vs constrained)"
+    milestone: M6-reference
+    deps: [E6.2]
+    deliverables:
+      - "evaluation.json + human report per docs/evaluation.md; frozen before run"
+    acceptance:
+      - "thresholds from docs/evaluation.md §3 evaluated and reported"
+      - "metric definitions identical across arms"
+
+  - key: E6.4
+    type: task
+    title: "E6.4 — Freeze evidence pack + cull-audit handoff (+ downstream trigger linkage)"
+    milestone: M6-reference
+    deps: [E6.3]
+    deliverables:
+      - "evidence pack (manifest digest, licenses, evaluation); cull-audit handoff record; delegation-queue#136 blocked_by amendment"
+    acceptance:
+      - "handoff references frozen build + materialization (if any) by digest"
+      - "#136/DQ linkage updated to the concrete E6 trigger"
+
+  - key: E6.5
+    type: subtask
+    title: "E6.5 — cull-audit materialization round (downstream, cross-repo; owned by dq#136)"
+    milestone: M6-reference
+    deps: [E6.4]
+    deliverables:
+      - "cull-audit demo corpus committed from the frozen build (per cull-audit#17 / dq#136); tracked here for linkage only — packaging ownership stays downstream"
+    acceptance:
+      - "per cull-audit#17 acceptance; owns only downstream packaging"
